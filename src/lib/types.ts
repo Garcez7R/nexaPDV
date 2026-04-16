@@ -44,3 +44,10 @@ export type SyncOperation<TPayload = unknown> = {
   payload: TPayload;
   createdAt: string;
 };
+
+export type AppSettings = {
+  id: "app-settings";
+  storeName: string;
+  defaultMinStockQty: number;
+  lastSyncAt: string | null;
+};

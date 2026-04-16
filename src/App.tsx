@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useAppState } from "./context/useAppState";
 import { AppLayout } from "./layouts/AppLayout";
 import { CaixaPage } from "./pages/CaixaPage";
 import { ConfiguracoesPage } from "./pages/ConfiguracoesPage";
@@ -8,6 +9,12 @@ import { ProdutosPage } from "./pages/ProdutosPage";
 import { RelatoriosPage } from "./pages/RelatoriosPage";
 
 export default function App() {
+  const { loading } = useAppState();
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center bg-canvas text-brand-900">Carregando base local...</div>;
+  }
+
   return (
     <Routes>
       <Route element={<AppLayout />}>

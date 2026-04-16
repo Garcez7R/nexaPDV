@@ -1,72 +1,207 @@
-import { Camera, ScanLine, Trash2 } from "lucide-react";
+import { Camera, Minus, Plus, ScanLine, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { SectionCard } from "../components/SectionCard";
+import { useAppState } from "../context/useAppState";
+import type { PaymentMethod, Product } from "../lib/types";
 import { formatCurrency } from "../lib/utils";
 
-const saleItems = [
-  { name: "Arroz Tipo 1 5kg", quantity: 1, price: 29.9 },
-  { name: "Café Torrado 500g", quantity: 2, price: 15.9 }
+type CartItem = {
+  productId: string;
+  quantity: number;
+};
+
+type CartDetailedItem = {
+  productId: string;
+  quantity: number;
+  product: Product;
+  subtotal: number;
+};
+
+const paymentOptions: Array<{ value: PaymentMethod; label: string }> = [
+  { value: "cash", label: "Dinheiro" },
+  { value: "debit", label: "Cartão débito" },
+  { value: "credit", label: "Cartão crédito" }
 ];
 
-const total = saleItems.reduce((acc, item) => acc + item.quantity * item.price, 0);
-const amountPaid = 70;
-
 export function CaixaPage() {
+  const { products, createSale, syncQueue } = useAppState();
+  const [query, setQuery] = useState("");
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [amountPaid, setAmountPaid] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [message, setMessage] = useState("");
+
+  const matchingProducts = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) {
+      return products.slice(0, 6);
+    }
+
+    return products.filter(
+      (product) =>
+        product.name.toLowerCase().includes(normalized) || product.barcode.toLowerCase().includes(normalized)
+    );
+  }, [products, query]);
+
+  const cartDetailed: CartDetailedItem[] = cart.flatMap((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId) as Product | undefined;
+    return product
+      ? [
+          {
+            ...item,
+            product,
+            subtotal: product.salePrice * item.quantity
+          }
+        ]
+      : [];
+  });
+
+  const total = cartDetailed.reduce((acc, item) => acc + item.subtotal, 0);
+  const received = Number(amountPaid || 0);
+
+  function addToCart(product: Product) {
+    setMessage("");
+    setCart((current) => {
+      const existing = current.find((item) => item.productId === product.id);
+      if (existing) {
+        return current.map((item) =>
+          item.productId === product.id
+            ? { ...item, quantity: Math.min(item.quantity + 1, product.stockQty) }
+            : item
+        );
+      }
+
+      return [...current, { productId: product.id, quantity: 1 }];
+    });
+    setQuery("");
+  }
+
+  function changeQuantity(productId: string, nextQuantity: number) {
+    setCart((current) =>
+      current
+        .map((item) => (item.productId === productId ? { ...item, quantity: nextQuantity } : item))
+        .filter((item) => item.quantity > 0)
+    );
+  }
+
+  function removeItem(productId: string) {
+    setCart((current) => current.filter((item) => item.productId !== productId));
+  }
+
+  async function finalizeSale() {
+    if (cartDetailed.length === 0) {
+      setMessage("Adicione pelo menos um item para concluir a venda.");
+      return;
+    }
+
+    try {
+      await createSale({
+        items: cartDetailed.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity
+        })),
+        amountPaid: received,
+        paymentMethod
+      });
+
+      setCart([]);
+      setAmountPaid("");
+      setPaymentMethod("cash");
+      setMessage("Venda concluída com sucesso. Estoque atualizado localmente.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nao foi possivel finalizar a venda.");
+    }
+  }
+
   return (
     <div>
       <PageHeader
         eyebrow="Caixa"
         title="Frente de venda híbrida"
-        description="Fluxo inicial para leitura por código de barras, lançamento manual e fechamento de venda com suporte a operação offline."
+        description="Fluxo funcional para busca, lançamento de itens, pagamento e baixa automática no estoque."
       />
 
-      <div className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
-        <SectionCard title="Lançamento da venda" description="Busca manual, leitor USB ou câmera do celular.">
+      <div className="grid gap-4 xl:grid-cols-[1.35fr_0.95fr]">
+        <SectionCard title="Lançamento da venda" description="Busca por nome ou codigo de barras.">
           <div className="grid gap-4">
             <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
               <input
                 className="rounded-2xl border border-brand-100 bg-canvas px-4 py-3 outline-none ring-0 placeholder:text-slate-400"
                 placeholder="Digite o código de barras ou nome do produto"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
               />
-              <button className="rounded-2xl bg-brand-500 px-4 py-3 font-medium text-white">Adicionar item</button>
+              <button className="rounded-2xl bg-brand-500 px-4 py-3 font-medium text-white" onClick={() => matchingProducts[0] && addToCart(matchingProducts[0])}>
+                Adicionar item
+              </button>
               <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900">
                 <Camera className="h-4 w-4" />
                 Escanear
               </button>
             </div>
 
+            <div className="rounded-3xl border border-brand-100 bg-white p-4">
+              <p className="mb-3 text-sm font-semibold text-brand-900">Sugestões para lançamento rápido</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {matchingProducts.slice(0, 6).map((product) => (
+                  <button key={product.id} className="rounded-2xl border border-brand-100 bg-canvas p-4 text-left" onClick={() => addToCart(product)}>
+                    <p className="font-semibold text-brand-900">{product.name}</p>
+                    <p className="text-sm text-slate-500">{product.barcode}</p>
+                    <p className="mt-2 text-sm text-brand-900">
+                      {formatCurrency(product.salePrice)} • Estoque {product.stockQty}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid gap-3">
-              {saleItems.map((item) => (
-                <div
-                  key={item.name}
-                  className="grid items-center gap-3 rounded-2xl border border-brand-100 bg-canvas px-4 py-4 md:grid-cols-[1fr_auto_auto_auto]"
-                >
+              {cartDetailed.map((item) => (
+                <div key={item.product.id} className="grid items-center gap-3 rounded-2xl border border-brand-100 bg-canvas px-4 py-4 md:grid-cols-[1fr_auto_auto_auto]">
                   <div>
-                    <p className="font-semibold text-brand-900">{item.name}</p>
-                    <p className="text-sm text-slate-500">Leitura por código de barras pronta para integrar.</p>
+                    <p className="font-semibold text-brand-900">{item.product.name}</p>
+                    <p className="text-sm text-slate-500">Saldo disponível: {item.product.stockQty}</p>
                   </div>
-                  <div className="rounded-full bg-white px-3 py-2 text-sm font-medium text-slate-600">
-                    Qtd: {item.quantity}
+                  <div className="flex items-center gap-2">
+                    <button className="rounded-full border border-brand-100 p-2 text-brand-900" onClick={() => changeQuantity(item.product.id, item.quantity - 1)}>
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <span className="rounded-full bg-white px-3 py-2 text-sm font-medium text-slate-600">{item.quantity}</span>
+                    <button className="rounded-full border border-brand-100 p-2 text-brand-900" onClick={() => changeQuantity(item.product.id, Math.min(item.quantity + 1, item.product.stockQty))}>
+                      <Plus className="h-4 w-4" />
+                    </button>
                   </div>
-                  <div className="text-sm font-semibold text-brand-900">{formatCurrency(item.price * item.quantity)}</div>
-                  <button className="inline-flex items-center justify-center rounded-full border border-red-100 p-2 text-red-500">
+                  <div className="text-sm font-semibold text-brand-900">{formatCurrency(item.subtotal)}</div>
+                  <button className="inline-flex items-center justify-center rounded-full border border-red-100 p-2 text-red-500" onClick={() => removeItem(item.product.id)}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               ))}
+              {cartDetailed.length === 0 ? <p className="text-sm text-slate-500">Nenhum item lançado ainda.</p> : null}
             </div>
           </div>
         </SectionCard>
 
-        <SectionCard title="Fechamento" description="Resumo, pagamento e envio para fila de sincronização.">
+        <SectionCard title="Fechamento" description="Resumo, pagamento e sincronização.">
           <div className="grid gap-4">
             <div className="rounded-3xl bg-brand-900 p-5 text-white">
               <p className="text-sm uppercase tracking-[0.2em] text-brand-100">Total da venda</p>
               <p className="mt-2 text-4xl font-bold">{formatCurrency(total)}</p>
             </div>
             <label className="grid gap-2 text-sm font-medium text-slate-700">
+              Forma de pagamento
+              <select className="rounded-2xl border border-brand-100 bg-canvas px-4 py-3" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>
+                {paymentOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-slate-700">
               Valor recebido
-              <input className="rounded-2xl border border-brand-100 bg-canvas px-4 py-3" defaultValue={amountPaid} />
+              <input className="rounded-2xl border border-brand-100 bg-canvas px-4 py-3" type="number" min="0" step="0.01" value={amountPaid} onChange={(event) => setAmountPaid(event.target.value)} />
             </label>
             <div className="grid gap-2 rounded-2xl border border-brand-100 bg-canvas p-4 text-sm">
               <div className="flex items-center justify-between">
@@ -75,14 +210,21 @@ export function CaixaPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span>Troco</span>
-                <strong>{formatCurrency(amountPaid - total)}</strong>
+                <strong>{formatCurrency(Math.max(received - total, 0))}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Pendências offline</span>
+                <strong>{syncQueue.length}</strong>
               </div>
             </div>
+            {message ? <div className="rounded-2xl bg-brand-50 p-4 text-sm text-brand-900">{message}</div> : null}
             <div className="grid gap-3">
-              <button className="rounded-2xl bg-accent px-4 py-3 font-semibold text-brand-900">Finalizar venda</button>
-              <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-slate-700">
+              <button className="rounded-2xl bg-accent px-4 py-3 font-semibold text-brand-900" onClick={finalizeSale}>
+                Finalizar venda
+              </button>
+              <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-slate-700" onClick={() => setMessage("A fila local já está pronta para sincronizar automaticamente quando você quiser forçar o envio.")}>
                 <ScanLine className="h-4 w-4" />
-                Forçar sync da venda depois
+                Ver estado da sincronização
               </button>
             </div>
           </div>

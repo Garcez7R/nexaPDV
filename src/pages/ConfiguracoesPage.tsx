@@ -26,8 +26,12 @@ export function ConfiguracoesPage() {
   }
 
   async function handleForceSync() {
-    await forceSync();
-    setMessage("Fila local marcada como sincronizada.");
+    try {
+      await forceSync();
+      setMessage("Sincronização concluída com sucesso.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Nao foi possivel sincronizar agora.");
+    }
   }
 
   return (

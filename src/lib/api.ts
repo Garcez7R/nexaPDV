@@ -1,9 +1,8 @@
-import type { Product, Sale, StockAdjustment, SyncOperation } from "./types";
-
-const API_BASE = "/api";
+import { buildApiUrl } from "../shared/config/env";
+import type { Product, Sale, StockAdjustment, SyncOperation, SyncResult } from "./types";
 
 async function request<TResponse>(path: string, init?: RequestInit): Promise<TResponse> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     headers: {
       "Content-Type": "application/json"
     },
@@ -18,36 +17,36 @@ async function request<TResponse>(path: string, init?: RequestInit): Promise<TRe
 }
 
 export function fetchProducts() {
-  return request<Product[]>("/products");
+  return request<Product[]>("/api/products");
 }
 
 export function fetchSales() {
-  return request<Sale[]>("/sales");
+  return request<Sale[]>("/api/sales");
 }
 
 export function createProduct(product: Product) {
-  return request<Product>("/products", {
+  return request<Product>("/api/products", {
     method: "POST",
     body: JSON.stringify(product)
   });
 }
 
 export function createSale(sale: Sale) {
-  return request<Sale>("/sales", {
+  return request<Sale>("/api/sales", {
     method: "POST",
     body: JSON.stringify(sale)
   });
 }
 
 export function createAdjustment(adjustment: StockAdjustment) {
-  return request<StockAdjustment>("/stock-adjustments", {
+  return request<StockAdjustment>("/api/stock-adjustments", {
     method: "POST",
     body: JSON.stringify(adjustment)
   });
 }
 
 export function syncOperations(operations: SyncOperation[]) {
-  return request<{ synced: number }>("/sync", {
+  return request<SyncResult>("/api/sync", {
     method: "POST",
     body: JSON.stringify({ operations })
   });

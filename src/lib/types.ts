@@ -45,6 +45,11 @@ export type SyncOperation<TPayload = unknown> = {
   createdAt: string;
 };
 
+export type SyncResult = {
+  synced: number;
+  strategy: string;
+};
+
 export type AppSettings = {
   id: "app-settings";
   storeName: string;

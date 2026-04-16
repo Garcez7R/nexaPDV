@@ -1,7 +1,6 @@
 import { useEffect, useState, type PropsWithChildren } from "react";
 import { AppContext } from "./app-context";
 import {
-  clearSyncQueue,
   deleteProduct as deleteProductInDb,
   getSettings,
   listAdjustments,
@@ -14,9 +13,11 @@ import {
   saveStockAdjustment,
   seedDatabase
 } from "../lib/persistence";
+import { hydrateLocalFromCloud, pushSyncQueue } from "../modules/sync/services/cloud-sync";
 import { scheduleSync } from "../lib/sync";
 import type { AppSettings, PaymentMethod, Product, Sale, StockAdjustment, SyncOperation } from "../lib/types";
 import { generateId } from "../lib/utils";
+import { cloudApiBaseUrl } from "../shared/config/env";
 
 type ProductInput = Omit<Product, "id" | "updatedAt"> & {
   id?: string;
@@ -81,6 +82,14 @@ export function AppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     async function boot() {
       await seedDatabase();
+      const pendingOperations = await listSyncQueue();
+      if (cloudApiBaseUrl && navigator.onLine && pendingOperations.length === 0) {
+        try {
+          await hydrateLocalFromCloud();
+        } catch {
+          // Preserve offline-first behavior when the API is unavailable.
+        }
+      }
       await refresh();
       setLoading(false);
     }
@@ -187,13 +196,25 @@ export function AppProvider({ children }: PropsWithChildren) {
   }
 
   async function forceSync() {
+    if (syncQueue.length > 0) {
+      if (!cloudApiBaseUrl) {
+        throw new Error("Configure VITE_API_BASE_URL para sincronizar com o Worker publicado.");
+      }
+
+      await pushSyncQueue(syncQueue);
+      try {
+        await hydrateLocalFromCloud();
+      } catch {
+        // Keep local state if pull refresh is temporarily unavailable.
+      }
+    }
+
     const nextSettings = {
       ...settings,
       lastSyncAt: new Date().toISOString()
     };
 
     await saveSettingsInDb(nextSettings);
-    await clearSyncQueue();
     await refresh();
   }
 

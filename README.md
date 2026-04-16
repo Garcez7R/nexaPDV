@@ -203,6 +203,16 @@ npm install
 npm run dev
 ```
 
+### Variável da API remota
+
+Para apontar o frontend publicado para o Worker em produção, configure:
+
+```bash
+VITE_API_BASE_URL=https://nexa-pdv-api.seu-subdominio.workers.dev
+```
+
+No Cloudflare Pages, essa variável deve ser criada em `Settings > Environment variables`.
+
 ### Verificação
 
 ```bash

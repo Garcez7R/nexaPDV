@@ -77,6 +77,16 @@ export async function saveProduct(product: Product) {
   await db.put("products", product);
 }
 
+export async function replaceProducts(products: Product[]) {
+  const db = await dbPromise;
+  const tx = db.transaction("products", "readwrite");
+  await tx.store.clear();
+  for (const product of products) {
+    await tx.store.put(product);
+  }
+  await tx.done;
+}
+
 export async function deleteProduct(productId: string) {
   const db = await dbPromise;
   await db.delete("products", productId);
@@ -116,6 +126,16 @@ export async function saveSale(sale: Sale) {
     });
   }
 
+  await tx.done;
+}
+
+export async function replaceSales(sales: Sale[]) {
+  const db = await dbPromise;
+  const tx = db.transaction("sales", "readwrite");
+  await tx.store.clear();
+  for (const sale of sales) {
+    await tx.store.put(sale);
+  }
   await tx.done;
 }
 

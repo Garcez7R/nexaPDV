@@ -39,6 +39,21 @@ type SaleItemRecord = {
   subtotal: number;
 };
 
+type ScannerSessionRecord = {
+  id: string;
+  pairing_code: string;
+  status: "open" | "closed";
+  created_at: string;
+  expires_at: string;
+};
+
+type ScannerScanRecord = {
+  id: string;
+  session_id: string;
+  barcode: string;
+  created_at: string;
+};
+
 async function json(data: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(data), {
     headers: {
@@ -82,6 +97,33 @@ function mapSales(sales: SaleRecord[], saleItems: SaleItemRecord[]) {
         subtotal: item.subtotal
       }))
   }));
+}
+
+function mapScannerSession(record: ScannerSessionRecord) {
+  return {
+    id: record.id,
+    pairingCode: record.pairing_code,
+    status: record.status,
+    createdAt: record.created_at,
+    expiresAt: record.expires_at
+  };
+}
+
+function mapScannerScan(record: ScannerScanRecord) {
+  return {
+    id: record.id,
+    sessionId: record.session_id,
+    barcode: record.barcode,
+    createdAt: record.created_at
+  };
+}
+
+function generateId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function generatePairingCode() {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
 async function applyProductOperation(env: Env, operation: SyncOperation) {
@@ -226,6 +268,103 @@ export default {
         synced: body.operations.length,
         strategy: "last-write-wins"
       });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/scanner/sessions") {
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 8).toISOString();
+      const id = generateId("scan-session");
+      const pairingCode = generatePairingCode();
+
+      await env.nexa_pdv
+        .prepare(
+          `INSERT INTO scanner_sessions
+          (id, pairing_code, status, created_at, expires_at)
+          VALUES (?, ?, 'open', ?, ?)`
+        )
+        .bind(id, pairingCode, now, expiresAt)
+        .run();
+
+      return json({
+        id,
+        pairingCode,
+        status: "open",
+        createdAt: now,
+        expiresAt
+      });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/scanner/sessions/")) {
+      const sessionId = url.pathname.split("/")[4];
+      const result = await env.nexa_pdv
+        .prepare("SELECT * FROM scanner_sessions WHERE id = ?")
+        .bind(sessionId)
+        .first<ScannerSessionRecord>();
+
+      if (!result) {
+        return json({ message: "Scanner session not found" }, { status: 404 });
+      }
+
+      return json(mapScannerSession(result));
+    }
+
+    if (request.method === "POST" && /\/api\/scanner\/sessions\/[^/]+\/scans$/.test(url.pathname)) {
+      const sessionId = url.pathname.split("/")[4];
+      const body = (await request.json()) as { barcode: string };
+      const scanId = generateId("scan");
+      const createdAt = new Date().toISOString();
+
+      const session = await env.nexa_pdv
+        .prepare("SELECT id, status, expires_at FROM scanner_sessions WHERE id = ?")
+        .bind(sessionId)
+        .first<{ id: string; status: string; expires_at: string }>();
+
+      if (!session || session.status !== "open" || session.expires_at < createdAt) {
+        return json({ message: "Scanner session is not active" }, { status: 400 });
+      }
+
+      await env.nexa_pdv
+        .prepare(
+          `INSERT INTO scanner_scans
+          (id, session_id, barcode, created_at, consumed_at)
+          VALUES (?, ?, ?, ?, NULL)`
+        )
+        .bind(scanId, sessionId, body.barcode.trim(), createdAt)
+        .run();
+
+      return json(
+        mapScannerScan({
+          id: scanId,
+          session_id: sessionId,
+          barcode: body.barcode.trim(),
+          created_at: createdAt
+        })
+      );
+    }
+
+    if (request.method === "POST" && /\/api\/scanner\/sessions\/[^/]+\/claim$/.test(url.pathname)) {
+      const sessionId = url.pathname.split("/")[4];
+      const scan = await env.nexa_pdv
+        .prepare(
+          `SELECT id, session_id, barcode, created_at
+          FROM scanner_scans
+          WHERE session_id = ? AND consumed_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT 1`
+        )
+        .bind(sessionId)
+        .first<ScannerScanRecord>();
+
+      if (!scan) {
+        return json(null);
+      }
+
+      await env.nexa_pdv
+        .prepare("UPDATE scanner_scans SET consumed_at = ? WHERE id = ?")
+        .bind(new Date().toISOString(), scan.id)
+        .run();
+
+      return json(mapScannerScan(scan));
     }
 
     return json({ message: "Route not found" }, { status: 404 });

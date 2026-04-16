@@ -1,9 +1,10 @@
-import { Camera, Minus, Plus, ScanLine, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Camera, Link as LinkIcon, Minus, Plus, ScanLine, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { SectionCard } from "../components/SectionCard";
 import { useAppState } from "../context/useAppState";
 import type { PaymentMethod, Product } from "../lib/types";
+import { openScannerSession, pollScannerBarcode } from "../modules/scanner/services/scanner-service";
 import { formatCurrency } from "../lib/utils";
 
 type CartItem = {
@@ -31,6 +32,9 @@ export function CaixaPage() {
   const [amountPaid, setAmountPaid] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [message, setMessage] = useState("");
+  const [scannerSessionId, setScannerSessionId] = useState("");
+  const [scannerPairingCode, setScannerPairingCode] = useState("");
+  const [scannerLink, setScannerLink] = useState("");
 
   const matchingProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -59,6 +63,34 @@ export function CaixaPage() {
 
   const total = cartDetailed.reduce((acc, item) => acc + item.subtotal, 0);
   const received = Number(amountPaid || 0);
+
+  useEffect(() => {
+    if (!scannerSessionId) {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      try {
+        const scan = await pollScannerBarcode(scannerSessionId);
+        if (!scan) {
+          return;
+        }
+
+        const product = products.find((candidate) => candidate.barcode === scan.barcode);
+        if (!product) {
+          setMessage(`Código ${scan.barcode} recebido do celular, mas nenhum produto corresponde a ele.`);
+          return;
+        }
+
+        addToCart(product);
+        setMessage(`Leitura remota recebida: ${product.name}.`);
+      } catch {
+        // Keep polling silently while the session is active.
+      }
+    }, 1400);
+
+    return () => window.clearInterval(timer);
+  }, [products, scannerSessionId]);
 
   function addToCart(product: Product) {
     setMessage("");
@@ -114,6 +146,31 @@ export function CaixaPage() {
     }
   }
 
+  async function startRemoteScanner() {
+    try {
+      const session = await openScannerSession();
+      setScannerSessionId(session.id);
+      setScannerPairingCode(session.pairingCode);
+      setScannerLink(`${window.location.origin}/scanner?session=${session.id}`);
+      setMessage("Sessão de leitor remoto pronta. Abra o link no celular e comece a escanear.");
+    } catch {
+      setMessage("Não foi possível abrir a sessão do leitor remoto.");
+    }
+  }
+
+  async function copyScannerLink() {
+    if (!scannerLink) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(scannerLink);
+      setMessage("Link do leitor remoto copiado.");
+    } catch {
+      setMessage("Copie manualmente o link exibido abaixo.");
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -135,11 +192,28 @@ export function CaixaPage() {
               <button className="rounded-2xl bg-brand-500 px-4 py-3 font-medium text-white" onClick={() => matchingProducts[0] && addToCart(matchingProducts[0])}>
                 Adicionar item
               </button>
-              <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900">
+              <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900" onClick={startRemoteScanner}>
                 <Camera className="h-4 w-4" />
                 Escanear
               </button>
             </div>
+
+            {scannerSessionId ? (
+              <div className="rounded-3xl border border-brand-100 bg-brand-50 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-700">Leitor remoto ativo</p>
+                    <p className="mt-1 text-lg font-bold text-brand-900">Sessão {scannerPairingCode}</p>
+                    <p className="mt-1 text-sm text-slate-600">Abra o link no celular conectado à mesma operação para enviar leituras ao caixa.</p>
+                  </div>
+                  <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900" onClick={copyScannerLink}>
+                    <LinkIcon className="h-4 w-4" />
+                    Copiar link
+                  </button>
+                </div>
+                <p className="mt-3 break-all rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">{scannerLink}</p>
+              </div>
+            ) : null}
 
             <div className="rounded-3xl border border-brand-100 bg-white p-4">
               <p className="mb-3 text-sm font-semibold text-brand-900">Sugestões para lançamento rápido</p>

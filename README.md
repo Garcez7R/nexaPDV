@@ -155,6 +155,7 @@ src/
 - carrinho com alteração de quantidade
 - cálculo de total e troco
 - fechamento de venda com baixa automática no estoque
+- pareamento com celular para leitura remota de código de barras
 
 ### Produtos
 
@@ -255,6 +256,7 @@ Estratégia recomendada para este projeto:
 - copiar o `database_id` retornado
 - atualizar o `wrangler.toml`
 - aplicar migrations com `npx wrangler d1 execute nexa-pdv --remote --file=worker/migrations/0001_initial.sql`
+- aplicar também a migration do leitor remoto com `npx wrangler d1 execute nexa-pdv --remote --file=worker/migrations/0002_scanner_sessions.sql`
 
 ## Scripts Disponíveis
 

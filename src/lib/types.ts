@@ -50,6 +50,21 @@ export type SyncResult = {
   strategy: string;
 };
 
+export type ScannerSession = {
+  id: string;
+  pairingCode: string;
+  status: "open" | "closed";
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type ScannerScan = {
+  id: string;
+  sessionId: string;
+  barcode: string;
+  createdAt: string;
+};
+
 export type AppSettings = {
   id: "app-settings";
   storeName: string;

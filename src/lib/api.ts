@@ -1,5 +1,13 @@
 import { buildApiUrl } from "../shared/config/env";
-import type { Product, Sale, StockAdjustment, SyncOperation, SyncResult } from "./types";
+import type {
+  Product,
+  Sale,
+  ScannerScan,
+  ScannerSession,
+  StockAdjustment,
+  SyncOperation,
+  SyncResult
+} from "./types";
 
 async function request<TResponse>(path: string, init?: RequestInit): Promise<TResponse> {
   const response = await fetch(buildApiUrl(path), {
@@ -49,5 +57,28 @@ export function syncOperations(operations: SyncOperation[]) {
   return request<SyncResult>("/api/sync", {
     method: "POST",
     body: JSON.stringify({ operations })
+  });
+}
+
+export function createScannerSession() {
+  return request<ScannerSession>("/api/scanner/sessions", {
+    method: "POST"
+  });
+}
+
+export function getScannerSession(sessionId: string) {
+  return request<ScannerSession>(`/api/scanner/sessions/${sessionId}`);
+}
+
+export function submitScannerScan(sessionId: string, barcode: string) {
+  return request<ScannerScan>(`/api/scanner/sessions/${sessionId}/scans`, {
+    method: "POST",
+    body: JSON.stringify({ barcode })
+  });
+}
+
+export function claimScannerScan(sessionId: string) {
+  return request<ScannerScan | null>(`/api/scanner/sessions/${sessionId}/claim`, {
+    method: "POST"
   });
 }

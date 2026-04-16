@@ -7,6 +7,7 @@ import { EstoquePage } from "./pages/EstoquePage";
 import { HomePage } from "./pages/HomePage";
 import { ProdutosPage } from "./pages/ProdutosPage";
 import { RelatoriosPage } from "./pages/RelatoriosPage";
+import { ScannerPage } from "./pages/ScannerPage";
 
 export default function App() {
   const { loading } = useAppState();
@@ -17,6 +18,7 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/scanner" element={<ScannerPage />} />
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
         <Route path="/caixa" element={<CaixaPage />} />

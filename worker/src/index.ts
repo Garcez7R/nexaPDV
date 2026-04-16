@@ -1,5 +1,5 @@
 export interface Env {
-  DB: D1Database;
+  nexa_pdv: D1Database;
 }
 
 type SyncOperation = {
@@ -24,12 +24,12 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/api/products") {
-      const result = await env.DB.prepare("SELECT * FROM products ORDER BY name ASC").all();
+      const result = await env.nexa_pdv.prepare("SELECT * FROM products ORDER BY name ASC").all();
       return json(result.results);
     }
 
     if (request.method === "GET" && url.pathname === "/api/sales") {
-      const result = await env.DB.prepare("SELECT * FROM sales ORDER BY created_at DESC").all();
+      const result = await env.nexa_pdv.prepare("SELECT * FROM sales ORDER BY created_at DESC").all();
       return json(result.results);
     }
 

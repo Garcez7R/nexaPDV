@@ -3,6 +3,6 @@ main = "worker/src/index.ts"
 compatibility_date = "2026-04-16"
 
 [[d1_databases]]
-binding = "DB"
+binding = "nexa_pdv"
 database_name = "nexa-pdv"
-database_id = "replace-with-cloudflare-d1-id"
+database_id = "874f83f6-4a94-4f23-a3de-d7654b0bfe35"

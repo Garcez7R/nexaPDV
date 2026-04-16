@@ -1,0 +1,8 @@
+name = "nexa-pdv-api"
+main = "worker/src/index.ts"
+compatibility_date = "2026-04-16"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nexa-pdv"
+database_id = "replace-with-cloudflare-d1-id"

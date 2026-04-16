@@ -1,6 +1,7 @@
 import { Camera, Keyboard, Link as LinkIcon, ScanBarcode } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import type { ScannerSession } from "../lib/types";
 import { loadScannerSession, sendScannerBarcode } from "../modules/scanner/services/scanner-service";
 
 type BarcodeDetectorWithDetect = {
@@ -17,10 +18,12 @@ export function ScannerPage() {
   const [searchParams] = useSearchParams();
   const initialSession = searchParams.get("session") ?? "";
   const [sessionId, setSessionId] = useState(initialSession);
+  const [session, setSession] = useState<ScannerSession | null>(null);
   const [connected, setConnected] = useState(false);
   const [message, setMessage] = useState("Conecte-se a uma sessão de caixa para usar o celular como leitor.");
   const [manualBarcode, setManualBarcode] = useState("");
   const [cameraReady, setCameraReady] = useState(false);
+  const [scanFlash, setScanFlash] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanLockRef = useRef(false);
@@ -34,7 +37,9 @@ export function ScannerPage() {
 
       try {
         const session = await loadScannerSession(sessionId);
-        if (session.status !== "open") {
+        setSession(session);
+
+        if (session.status !== "open" || new Date(session.expiresAt).getTime() <= Date.now()) {
           setMessage("Esta sessão não está mais ativa.");
           setConnected(false);
           return;
@@ -49,6 +54,27 @@ export function ScannerPage() {
     }
 
     void validateSession();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    const timer = window.setInterval(async () => {
+      try {
+        const nextSession = await loadScannerSession(sessionId);
+        setSession(nextSession);
+        if (nextSession.status !== "open" || new Date(nextSession.expiresAt).getTime() <= Date.now()) {
+          setConnected(false);
+          setMessage("A sessão expirou ou foi encerrada no caixa.");
+        }
+      } catch {
+        setConnected(false);
+      }
+    }, 4000);
+
+    return () => window.clearInterval(timer);
   }, [sessionId]);
 
   useEffect(() => {
@@ -108,6 +134,28 @@ export function ScannerPage() {
         scanLockRef.current = true;
         await sendScannerBarcode(sessionId, barcode);
         setMessage(`Código ${barcode} enviado para o caixa.`);
+        setScanFlash(true);
+        if ("vibrate" in navigator) {
+          navigator.vibrate(120);
+        }
+        try {
+          const audioContext = new AudioContext();
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = 880;
+          oscillator.connect(gain);
+          gain.connect(audioContext.destination);
+          gain.gain.value = 0.05;
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.08);
+          window.setTimeout(() => {
+            void audioContext.close();
+          }, 120);
+        } catch {
+          // Silent fallback when Web Audio is unavailable.
+        }
+        window.setTimeout(() => setScanFlash(false), 250);
         window.setTimeout(() => {
           scanLockRef.current = false;
         }, 1800);
@@ -130,6 +178,11 @@ export function ScannerPage() {
     try {
       await sendScannerBarcode(sessionId, manualBarcode.trim());
       setMessage(`Código ${manualBarcode.trim()} enviado para o caixa.`);
+      setScanFlash(true);
+      if ("vibrate" in navigator) {
+        navigator.vibrate(120);
+      }
+      window.setTimeout(() => setScanFlash(false), 250);
       setManualBarcode("");
     } catch {
       setMessage("Não foi possível enviar o código agora.");
@@ -158,6 +211,16 @@ export function ScannerPage() {
                 placeholder="Cole aqui o ID da sessão"
               />
             </label>
+            {session ? (
+              <div className="flex flex-wrap gap-2 text-sm">
+                <span className="rounded-full bg-canvas px-3 py-2 font-medium text-brand-900">
+                  Sessão: {session.pairingCode}
+                </span>
+                <span className="rounded-full bg-canvas px-3 py-2 font-medium text-brand-900">
+                  Expira: {new Date(session.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </div>
+            ) : null}
             <div className="rounded-2xl bg-brand-50 p-4 text-sm text-brand-900">{message}</div>
           </div>
         </section>
@@ -167,11 +230,11 @@ export function ScannerPage() {
             <Camera className="h-5 w-5" />
             <h2 className="text-lg font-semibold">Leitura por câmera</h2>
           </div>
-          <div className="overflow-hidden rounded-[28px] bg-brand-900">
+          <div className={scanFlash ? "overflow-hidden rounded-[28px] bg-emerald-500 ring-4 ring-emerald-300" : "overflow-hidden rounded-[28px] bg-brand-900"}>
             <video ref={videoRef} className="aspect-[3/4] w-full object-cover" muted playsInline />
           </div>
           <p className="mt-3 text-sm text-slate-500">
-            Em navegadores compatíveis com `BarcodeDetector`, a leitura acontece automaticamente.
+            Em navegadores compatíveis com `BarcodeDetector`, a leitura acontece automaticamente com feedback tátil e visual.
           </p>
         </section>
 

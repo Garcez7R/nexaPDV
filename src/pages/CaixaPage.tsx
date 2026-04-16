@@ -1,10 +1,15 @@
-import { Camera, Link as LinkIcon, Minus, Plus, ScanLine, Trash2 } from "lucide-react";
+import { Camera, Link as LinkIcon, Minus, Plus, Power, RefreshCcw, ScanLine, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { SectionCard } from "../components/SectionCard";
 import { useAppState } from "../context/useAppState";
-import type { PaymentMethod, Product } from "../lib/types";
-import { openScannerSession, pollScannerBarcode } from "../modules/scanner/services/scanner-service";
+import type { PaymentMethod, Product, ScannerSession } from "../lib/types";
+import {
+  endScannerSession,
+  loadScannerSession,
+  openScannerSession,
+  pollScannerBarcode
+} from "../modules/scanner/services/scanner-service";
 import { QrCodeCard } from "../shared/components/QrCodeCard";
 import { formatCurrency } from "../lib/utils";
 
@@ -33,9 +38,9 @@ export function CaixaPage() {
   const [amountPaid, setAmountPaid] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [message, setMessage] = useState("");
-  const [scannerSessionId, setScannerSessionId] = useState("");
-  const [scannerPairingCode, setScannerPairingCode] = useState("");
+  const [scannerSession, setScannerSession] = useState<ScannerSession | null>(null);
   const [scannerLink, setScannerLink] = useState("");
+  const [scannerTimeLeft, setScannerTimeLeft] = useState("");
 
   const matchingProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -66,13 +71,25 @@ export function CaixaPage() {
   const received = Number(amountPaid || 0);
 
   useEffect(() => {
-    if (!scannerSessionId) {
+    if (!scannerSession?.id) {
       return;
     }
 
+    const activeSessionId = scannerSession.id;
+
     const timer = window.setInterval(async () => {
       try {
-        const scan = await pollScannerBarcode(scannerSessionId);
+        const latestSession = await loadScannerSession(activeSessionId);
+        setScannerSession(latestSession);
+
+        if (latestSession.status !== "open" || new Date(latestSession.expiresAt).getTime() <= Date.now()) {
+          setMessage("Sessão do leitor remoto encerrada ou expirada.");
+          setScannerSession(null);
+          setScannerLink("");
+          return;
+        }
+
+        const scan = await pollScannerBarcode(activeSessionId);
         if (!scan) {
           return;
         }
@@ -91,7 +108,32 @@ export function CaixaPage() {
     }, 1400);
 
     return () => window.clearInterval(timer);
-  }, [products, scannerSessionId]);
+  }, [products, scannerSession]);
+
+  useEffect(() => {
+    if (!scannerSession) {
+      setScannerTimeLeft("");
+      return;
+    }
+
+    const activeExpiresAt = scannerSession.expiresAt;
+
+    function updateTimeLeft() {
+      const remainingMs = new Date(activeExpiresAt).getTime() - Date.now();
+      if (remainingMs <= 0) {
+        setScannerTimeLeft("Expirada");
+        return;
+      }
+
+      const minutes = Math.floor(remainingMs / 60000);
+      const seconds = Math.floor((remainingMs % 60000) / 1000);
+      setScannerTimeLeft(`${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`);
+    }
+
+    updateTimeLeft();
+    const timer = window.setInterval(updateTimeLeft, 1000);
+    return () => window.clearInterval(timer);
+  }, [scannerSession]);
 
   function addToCart(product: Product) {
     setMessage("");
@@ -150,12 +192,31 @@ export function CaixaPage() {
   async function startRemoteScanner() {
     try {
       const session = await openScannerSession();
-      setScannerSessionId(session.id);
-      setScannerPairingCode(session.pairingCode);
+      setScannerSession(session);
       setScannerLink(`${window.location.origin}/scanner?session=${session.id}`);
       setMessage("Sessão de leitor remoto pronta. Abra o link no celular e comece a escanear.");
     } catch {
       setMessage("Não foi possível abrir a sessão do leitor remoto.");
+    }
+  }
+
+  async function refreshRemoteScanner() {
+    await startRemoteScanner();
+  }
+
+  async function closeRemoteScanner() {
+    if (!scannerSession) {
+      return;
+    }
+
+    try {
+      await endScannerSession(scannerSession.id);
+      setScannerSession(null);
+      setScannerLink("");
+      setScannerTimeLeft("");
+      setMessage("Sessão do leitor remoto encerrada.");
+    } catch {
+      setMessage("Não foi possível encerrar a sessão agora.");
     }
   }
 
@@ -199,26 +260,44 @@ export function CaixaPage() {
               </button>
             </div>
 
-            {scannerSessionId ? (
+            {scannerSession ? (
               <div className="grid gap-4 rounded-3xl border border-brand-100 bg-brand-50 p-4 lg:grid-cols-[1fr_260px]">
                 <div>
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-700">Leitor remoto ativo</p>
-                      <p className="mt-1 text-lg font-bold text-brand-900">Sessão {scannerPairingCode}</p>
+                      <p className="mt-1 text-lg font-bold text-brand-900">Sessão {scannerSession.pairingCode}</p>
                       <p className="mt-1 text-sm text-slate-600">Abra o link no celular conectado à mesma operação para enviar leituras ao caixa.</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                        <span className="rounded-full bg-white px-3 py-2 font-medium text-brand-900">
+                          Status: {scannerSession.status === "open" ? "Ativa" : "Encerrada"}
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-2 font-medium text-brand-900">
+                          Expira em: {scannerTimeLeft || "--:--"}
+                        </span>
+                      </div>
                     </div>
-                    <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900" onClick={copyScannerLink}>
-                      <LinkIcon className="h-4 w-4" />
-                      Copiar link
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900" onClick={copyScannerLink}>
+                        <LinkIcon className="h-4 w-4" />
+                        Copiar link
+                      </button>
+                      <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-brand-100 bg-white px-4 py-3 font-medium text-brand-900" onClick={refreshRemoteScanner}>
+                        <RefreshCcw className="h-4 w-4" />
+                        Renovar
+                      </button>
+                      <button className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-100 bg-white px-4 py-3 font-medium text-red-600" onClick={closeRemoteScanner}>
+                        <Power className="h-4 w-4" />
+                        Encerrar
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-3 break-all rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">{scannerLink}</p>
                 </div>
                 <QrCodeCard
                   value={scannerLink}
                   title="Abrir no celular"
-                  description="Leia este QR Code com a câmera do celular para abrir o scanner remoto."
+                  description="Leia este QR Code com a câmera do celular para abrir o scanner remoto. Renove a sessão quando expirar."
                 />
               </div>
             ) : null}

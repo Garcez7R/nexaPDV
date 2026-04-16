@@ -82,3 +82,9 @@ export function claimScannerScan(sessionId: string) {
     method: "POST"
   });
 }
+
+export function closeScannerSession(sessionId: string) {
+  return request<ScannerSession>(`/api/scanner/sessions/${sessionId}/close`, {
+    method: "POST"
+  });
+}

@@ -308,6 +308,25 @@ export default {
       return json(mapScannerSession(result));
     }
 
+    if (request.method === "POST" && /\/api\/scanner\/sessions\/[^/]+\/close$/.test(url.pathname)) {
+      const sessionId = url.pathname.split("/")[4];
+      await env.nexa_pdv
+        .prepare("UPDATE scanner_sessions SET status = 'closed' WHERE id = ?")
+        .bind(sessionId)
+        .run();
+
+      const result = await env.nexa_pdv
+        .prepare("SELECT * FROM scanner_sessions WHERE id = ?")
+        .bind(sessionId)
+        .first<ScannerSessionRecord>();
+
+      if (!result) {
+        return json({ message: "Scanner session not found" }, { status: 404 });
+      }
+
+      return json(mapScannerSession(result));
+    }
+
     if (request.method === "POST" && /\/api\/scanner\/sessions\/[^/]+\/scans$/.test(url.pathname)) {
       const sessionId = url.pathname.split("/")[4];
       const body = (await request.json()) as { barcode: string };

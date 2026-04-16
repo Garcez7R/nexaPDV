@@ -1,5 +1,6 @@
 import {
   claimScannerScan,
+  closeScannerSession,
   createScannerSession,
   getScannerSession,
   submitScannerScan
@@ -19,4 +20,8 @@ export async function sendScannerBarcode(sessionId: string, barcode: string) {
 
 export async function pollScannerBarcode(sessionId: string) {
   return claimScannerScan(sessionId);
+}
+
+export async function endScannerSession(sessionId: string) {
+  return closeScannerSession(sessionId);
 }

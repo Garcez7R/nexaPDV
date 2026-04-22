@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "prompt",
-      includeAssets: ["favicon.svg", "robots.txt"],
+      includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "robots.txt"],
       manifest: {
         name: "0PDV",
         short_name: "0PDV",
@@ -19,14 +19,19 @@ export default defineConfig({
         start_url: "/",
         icons: [
           {
-            src: "/favicon.svg",
-            sizes: "any",
-            type: "image/svg+xml"
+            src: "/icon-192.png",
+            sizes: "192x192",
+            type: "image/png"
           },
           {
-            src: "/favicon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
+            src: "/icon-512.png",
+            sizes: "512x512",
+            type: "image/png"
+          },
+          {
+            src: "/icon-512.png",
+            sizes: "512x512",
+            type: "image/png",
             purpose: "maskable"
           }
         ]
